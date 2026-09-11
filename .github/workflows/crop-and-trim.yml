@@ -1,0 +1,59 @@
+name: Crop Watermark and Trim Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      gist_id:
+        description: 'Target Gist ID'
+        required: true
+      crop_bottom_px:
+        description: 'จำนวนพิกเซลที่ต้องการตัดขอบล่างออก (Default: 60)'
+        required: false
+        default: '60'
+      trim_end_seconds:
+        description: 'จำนวนวินาทีที่ต้องการตัดท้ายคลิปออก (Default: 4)'
+        required: false
+        default: '4'
+
+jobs:
+  process-video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Download & Decode Video
+        env:
+          GH_TOKEN: ${{ secrets.MY_GIST_TOKEN }}
+          GIST_ID: ${{ inputs.gist_id }}
+        run: |
+          # 1. ดึงไฟล์ input.txt จาก Gist
+          gh gist view $GIST_ID --filename input.txt > input_base64.txt
+          
+          # 2. Decode กลับเป็นไฟล์วิดีโอ input.mp4
+          base64 -d input_base64.txt > input.mp4
+
+      - name: Process Video (Crop Bottom & Trim End)
+        run: |
+          # 1. หาความยาวคลิป
+          TOTAL_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 input.mp4)
+          echo "Original Duration: $TOTAL_DURATION seconds"
+          
+          # 2. คำนวณเวลาตัด 4 วินาทีท้ายออก
+          TRIM_SEC="${{ inputs.trim_end_seconds }}"
+          TARGET_DURATION=$(python3 -c "print(max(0, float('$TOTAL_DURATION') - float('$TRIM_SEC')))")
+          echo "Target Duration: $TARGET_DURATION seconds"
+
+          # 3. รัน FFmpeg แบบปรับขนาดอัตโนมัติ (iw = กว้างเดิม, ih = สูงเดิม)
+          CROP_PX="${{ inputs.crop_bottom_px }}"
+          ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
+            -vf "crop=iw:ih-${CROP_PX}:0:0,scale=iw:ih" \
+            -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
+
+      - name: Encode & Upload Result
+        env:
+          GH_TOKEN: ${{ secrets.MY_GIST_TOKEN }}
+          GIST_ID: ${{ inputs.gist_id }}
+        run: |
+          base64 -w 0 output.mp4 > output.txt
+          gh gist edit $GIST_ID --add output.txt
