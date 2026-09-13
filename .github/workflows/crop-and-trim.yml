@@ -35,20 +35,38 @@ jobs:
 
       - name: Process Video (Crop Bottom & Trim End)
         run: |
-          # 1. หาความยาวคลิป
+          # 1. ตรวจสอบความยาวคลิป
           TOTAL_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 input.mp4)
           echo "Original Duration: $TOTAL_DURATION seconds"
           
-          # 2. คำนวณเวลาตัด 4 วินาทีท้ายออก
+          # 2. คำนวณเวลาตัดท้ายคลิปออก
           TRIM_SEC="${{ inputs.trim_end_seconds }}"
           TARGET_DURATION=$(python3 -c "print(max(0, float('$TOTAL_DURATION') - float('$TRIM_SEC')))")
           echo "Target Duration: $TARGET_DURATION seconds"
 
-          # 3. รัน FFmpeg แบบปรับขนาดอัตโนมัติ (iw = กว้างเดิม, ih = สูงเดิม)
+          # 3. ดึงขนาดความกว้าง (Width) และความสูง (Height) ดั้งเดิมของวิดีโอ
+          WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 input.mp4)
+          HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=noprint_wrappers=1:nokey=1 input.mp4)
+          echo "ตรวจพบขนาดวิดีโอต้นฉบับ: ${WIDTH}x${HEIGHT}"
+
           CROP_PX="${{ inputs.crop_bottom_px }}"
-          ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
-            -vf "crop=iw:ih-${CROP_PX}:0:0,scale=iw:ih+${CROP_PX}" \
-            -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
+
+          # 4. เช็คว่าเป็นแนวตั้ง หรือ แนวนอน
+          if [ "$HEIGHT" -gt "$WIDTH" ]; then
+            echo "🎬 วิดีโอแนวตั้ง (Portrait เช่น 720x1280)"
+            # ตัดขอบล่างออก และปรับขนาดกลับเป็นขนาดเดิมเป๊ะ
+            ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
+              -vf "crop=iw:ih-${CROP_PX}:0:0,scale=${WIDTH}:${HEIGHT}" \
+              -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
+          else
+            echo "🖥️ วิดีโอแนวนอน (Landscape เช่น 1280x720)"
+            # ตัดขอบล่างออก และปรับขนาดกลับเป็นขนาดเดิมเป๊ะ
+            ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
+              -vf "crop=iw:ih-${CROP_PX}:0:0,scale=${WIDTH}:${HEIGHT}" \
+              -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
+          fi
+
+          echo "✅ ประมวลผลเสร็จสิ้น ขนาดสุดท้ายคืนค่าเดิมเป็น: ${WIDTH}x${HEIGHT}"
 
       - name: Encode & Upload Result
         env:
