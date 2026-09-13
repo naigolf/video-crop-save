@@ -51,19 +51,17 @@ jobs:
 
           CROP_PX="${{ inputs.crop_bottom_px }}"
 
-          # 4. เช็คว่าเป็นแนวตั้ง หรือ แนวนอน
+          # 4. เช็คว่าเป็นแนวตั้ง หรือ แนวนอน (ปรับ preset ให้ไฟล์ไม่บวมใหญ่เกินไป)
           if [ "$HEIGHT" -gt "$WIDTH" ]; then
             echo "🎬 วิดีโอแนวตั้ง (Portrait เช่น 720x1280)"
-            # ตัดขอบล่างออก และปรับขนาดกลับเป็นขนาดเดิมเป๊ะ
             ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
               -vf "crop=iw:ih-${CROP_PX}:0:0,scale=${WIDTH}:${HEIGHT}" \
-              -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
+              -c:v libx264 -preset veryfast -crf 26 -c:a aac output.mp4
           else
             echo "🖥️ วิดีโอแนวนอน (Landscape เช่น 1280x720)"
-            # ตัดขอบล่างออก และปรับขนาดกลับเป็นขนาดเดิมเป๊ะ
             ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
               -vf "crop=iw:ih-${CROP_PX}:0:0,scale=${WIDTH}:${HEIGHT}" \
-              -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
+              -c:v libx264 -preset veryfast -crf 26 -c:a aac output.mp4
           fi
 
           echo "✅ ประมวลผลเสร็จสิ้น ขนาดสุดท้ายคืนค่าเดิมเป็น: ${WIDTH}x${HEIGHT}"
@@ -73,5 +71,16 @@ jobs:
           GH_TOKEN: ${{ secrets.MY_GIST_TOKEN }}
           GIST_ID: ${{ inputs.gist_id }}
         run: |
+          # 1. แปลงไฟล์เป็น Base64
           base64 -w 0 output.mp4 > output.txt
-          gh gist edit $GIST_ID --add output.txt
+
+          # 2. อัปโหลดเข้า Gist ผ่าน Git Push โดยตรง (แก้ปัญหาไฟล์ใหญ่เกิน 10MB ของ Gist API)
+          git clone "https://${GH_TOKEN}@gist.github.com/${GIST_ID}.git" gist_repo
+          cp output.txt gist_repo/output.txt
+          cd gist_repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output.txt
+          git commit -m "Upload processed video output"
+          git push
+          echo "✅ อัปโหลดผลลัพธ์เข้า Gist สำเร็จเรียบร้อย!"
