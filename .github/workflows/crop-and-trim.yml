@@ -47,7 +47,7 @@ jobs:
           # 3. รัน FFmpeg แบบปรับขนาดอัตโนมัติ (iw = กว้างเดิม, ih = สูงเดิม)
           CROP_PX="${{ inputs.crop_bottom_px }}"
           ffmpeg -i input.mp4 -t "$TARGET_DURATION" \
-            -vf "crop=iw:ih-${CROP_PX}:0:0,scale=iw:ih" \
+            -vf "crop=iw:ih-${CROP_PX}:0:0,scale=iw:ih+${CROP_PX}" \
             -c:v libx264 -preset ultrafast -crf 23 -c:a aac output.mp4
 
       - name: Encode & Upload Result
